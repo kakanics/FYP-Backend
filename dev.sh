@@ -25,8 +25,8 @@ start_dev_environment() {
     print_info "Step 2: Starting microservices locally..."
     ./start_services.sh
     
-    echo "   • Use './dev.sh status' to check everything"
-    echo "   • Use './dev.sh stop' to stop everything"
+    echo "   Use './dev.sh status' to check everything"
+    echo "   Use './dev.sh stop' to stop everything"
 }
 
 stop_dev_environment() {
