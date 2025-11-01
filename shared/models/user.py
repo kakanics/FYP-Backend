@@ -1,8 +1,5 @@
-"""
-Example user model - demonstrates how to extend the shared base model
-Place this in shared/models/ to make it available to all services
-"""
 from sqlalchemy import Column, String, Boolean, Integer
+from sqlalchemy.orm import relationship
 from shared.models.base import BaseModel
 
 class User(BaseModel):
@@ -15,11 +12,11 @@ class User(BaseModel):
     is_active = Column(Boolean, default=True, nullable=False)
     age = Column(Integer, nullable=True)
     
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<User(username='{self.username}', email='{self.email}')>"
     
     def to_dict(self):
-        """Override base to_dict to customize serialization"""
         data = super().to_dict()
-        # Remove sensitive information if needed
         return data

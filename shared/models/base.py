@@ -12,7 +12,6 @@ class BaseModel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     def to_dict(self):
-        """Convert model instance to dictionary"""
         return {
             column.name: getattr(self, column.name)
             for column in self.__table__.columns

@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flask-test-config
+data:
+  APP_ENV: "development"
+  LOG_LEVEL: "INFO"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-test-service
+  labels:
+    app: flask-test-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flask-test-service
+  template:
+    metadata:
+      labels:
+        app: flask-test-service
+    spec:
+      containers:
+      - name: flask-test-service
+        image: test-service:latest
+        imagePullPolicy: Never  # Use local image built with Docker
+        ports:
+        - containerPort: 5000
+        env:
+        - name: APP_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: flask-test-config
+              key: APP_ENV
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: flask-test-config
+              key: LOG_LEVEL
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-test-service
+  labels:
+    app: flask-test-service
+spec:
+  type: NodePort
+  ports:
+  - port: 5000
+    targetPort: 5000
+    nodePort: 30091
+    protocol: TCP
+  selector:
+    app: flask-test-service

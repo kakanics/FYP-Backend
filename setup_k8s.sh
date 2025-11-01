@@ -42,7 +42,6 @@ print_usage() {
     echo "  $0 status"
 }
 
-# Detect container runtime
 detect_runtime() {
     if command -v colima &> /dev/null && colima status &> /dev/null; then
         echo "colima"
@@ -53,59 +52,42 @@ detect_runtime() {
     fi
 }
 
-# Check prerequisites
 check_prerequisites() {
     print_info "Checking prerequisites..."
     
-    # Check if kubectl is installed
     if ! command -v kubectl &> /dev/null; then
         print_error "kubectl is not installed. Please install it first:"
-        echo "  brew install kubectl"
-        echo "  or visit: https://kubernetes.io/docs/tasks/tools/"
+        echo "https://kubernetes.io/docs/tasks/tools/"
         exit 1
     fi
     
-    # Check if Docker is running
     if ! docker info &> /dev/null; then
         print_error "Docker is not running. Please start Docker first."
         exit 1
     fi
     
-    print_success "Prerequisites check passed"
 }
 
-# Setup Colima with Kubernetes
 setup_colima() {
     print_info "Setting up Colima with Kubernetes..."
-    
-    # Check if colima is installed
     if ! command -v colima &> /dev/null; then
         print_error "Colima is not installed. Installing via Homebrew..."
         brew install colima
     fi
-    
-    # Stop colima if running
     if colima status &> /dev/null; then
         print_info "Stopping existing Colima instance..."
         colima stop
     fi
     
-    # Start colima with Kubernetes
     print_info "Starting Colima with Kubernetes support..."
     colima start --kubernetes --cpu 4 --memory 8 --disk 50
-    
-    # Wait for Kubernetes to be ready
-    print_info "Waiting for Kubernetes to be ready..."
     kubectl wait --for=condition=Ready nodes --all --timeout=300s
-    
     print_success "Colima with Kubernetes is ready"
 }
 
-# Setup Docker Desktop Kubernetes
 setup_docker_desktop() {
     print_info "Setting up Docker Desktop Kubernetes..."
     
-    # Check if Docker Desktop is running
     if ! docker context ls | grep -q "desktop-linux\|docker-desktop" 2>/dev/null; then
         print_error "Docker Desktop is not running. Please start Docker Desktop and enable Kubernetes."
         print_info "To enable Kubernetes in Docker Desktop:"
@@ -116,23 +98,17 @@ setup_docker_desktop() {
         exit 1
     fi
     
-    # Switch to docker-desktop context
     kubectl config use-context docker-desktop
     
-    # Wait for Kubernetes to be ready
     print_info "Waiting for Kubernetes to be ready..."
     kubectl wait --for=condition=Ready nodes --all --timeout=300s
-    
     print_success "Docker Desktop Kubernetes is ready"
 }
 
-# Create Kubernetes manifests
 create_k8s_manifests() {
     print_info "Creating Kubernetes manifests..."
     
     mkdir -p k8s
-    
-    # NATS for service communication
     cat > k8s/nats.yaml << 'EOF'
 apiVersion: v1
 kind: ConfigMap
@@ -238,25 +214,19 @@ spec:
   type: NodePort
 EOF
 
-    # Create service manifests for each service
     for service_dir in services/*/; do
         if [ -d "$service_dir" ]; then
             service_name=$(basename "$service_dir")
-            # Convert underscores to hyphens for Kubernetes-valid names
             k8s_service_name=$(echo "$service_name" | tr '_' '-')
-            
-            # Skip if not a valid service directory
             if [ ! -f "$service_dir/app.py" ]; then
                 continue
             fi
             
-            # Get port from .env file
             port=$(grep "^PORT=" "$service_dir/.env" | cut -d'=' -f2)
             if [ -z "$port" ]; then
                 port="8080"
             fi
             
-            # Map service port to NodePort range (30000-32767)
             case "$k8s_service_name" in
                 "user-service")
                     nodeport="30002"
@@ -269,7 +239,6 @@ EOF
                     ;;
             esac
             
-            # Create Dockerfile if it doesn't exist or update it
             cat > "$service_dir/Dockerfile" << EOF
 FROM python:3.11-slim
 
@@ -291,7 +260,6 @@ EXPOSE $port
 CMD ["python", "app.py"]
 EOF
 
-            # Create Kubernetes manifest
             cat > "k8s/${k8s_service_name}.yaml" << EOF
 apiVersion: v1
 kind: ConfigMap
@@ -370,30 +338,18 @@ EOF
     print_success "Kubernetes manifests created"
 }
 
-# Build Docker images
 build_images() {
-    print_info "Building Docker images..."
-    
     for service_dir in services/*/; do
         if [ -d "$service_dir" ] && [ -f "$service_dir/app.py" ]; then
             service_name=$(basename "$service_dir")
             
             print_info "Building image for $service_name..."
             
-            # Create build context
             mkdir -p "build/$service_name"
-            
-            # Copy shared components
             cp -r shared "build/$service_name/"
             cp -r db_manager "build/$service_name/"
-            
-            # Copy service files
             cp -r "$service_dir"/* "build/$service_name/"
-            
-            # Build image (keep original service_name for image tag)
             docker build -t "$service_name:latest" "build/$service_name/"
-            
-            # Clean up build context
             rm -rf "build/$service_name"
         fi
     done
@@ -401,58 +357,36 @@ build_images() {
     print_success "Docker images built"
 }
 
-# Deploy to Kubernetes
 deploy_to_k8s() {
     print_info "Deploying to Kubernetes..."
-    
-    # Deploy NATS first for service communication
     kubectl apply -f k8s/nats.yaml
-    
-    # Wait for NATS to be ready
     print_info "Waiting for NATS to be ready..."
     kubectl wait --for=condition=Ready pod -l app=nats --timeout=300s
-    
-    # Deploy services
     for manifest in k8s/*.yaml; do
         if [ "$(basename "$manifest")" != "nats.yaml" ]; then
             kubectl apply -f "$manifest"
         fi
     done
     
-    # Wait for deployments to be ready
     print_info "Waiting for services to be ready..."
     kubectl wait --for=condition=Available deployment --all --timeout=300s
-    
     print_success "All services deployed to Kubernetes"
     print_info "NATS monitoring available at: http://localhost:30822"
     print_warning "Note: Update DATABASE_URL in service configs to point to your external MySQL server"
 }
 
-# Check cluster status
 check_status() {
     print_info "Checking Kubernetes cluster status..."
     
-    # Check nodes
-    echo ""
     echo "Nodes:"
     kubectl get nodes
-    
-    # Check pods
-    echo ""
     echo "Pods:"
     kubectl get pods -o wide
-    
-    # Check services
-    echo ""
     echo "Services:"
     kubectl get services
-    
-    # Check deployments
-    echo ""
     echo "Deployments:"
     kubectl get deployments
     
-    # Show service URLs
     echo ""
     echo "Service URLs:"
     echo "  User Service: http://localhost:30002/api/v1/"
@@ -463,20 +397,12 @@ check_status() {
     print_info "NATS is available for inter-service communication on localhost:30422"
 }
 
-# Cleanup function
 cleanup_k8s() {
-    print_warning "Cleaning up Kubernetes resources..."
-    
-    # Delete all deployments and services
     kubectl delete -f k8s/ --ignore-not-found=true
-    
-    # Delete persistent volume claims
     kubectl delete pvc --all --ignore-not-found=true
-    
     print_success "Cleanup completed"
 }
 
-# Start cluster
 start_cluster() {
     local runtime="$1"
     
@@ -502,7 +428,6 @@ start_cluster() {
     print_success "Kubernetes cluster is ready"
 }
 
-# Stop cluster
 stop_cluster() {
     local runtime="$1"
     
@@ -525,9 +450,7 @@ stop_cluster() {
     esac
 }
 
-# Main script logic
 main() {
-    # Parse arguments
     COMMAND=""
     RUNTIME=""
     
@@ -554,7 +477,6 @@ main() {
         exit 1
     fi
     
-    # Auto-detect runtime if not specified
     if [ -z "$RUNTIME" ]; then
         RUNTIME=$(detect_runtime)
         if [ "$RUNTIME" = "unknown" ]; then
@@ -598,5 +520,4 @@ main() {
     esac
 }
 
-# Run main function
 main "$@"

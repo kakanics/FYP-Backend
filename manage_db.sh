@@ -9,25 +9,19 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 print_usage() {
-    echo "Usage: $0 [migrate|reset|create-tables|drop-tables|status]"
-    echo ""
     echo "Commands:"
     echo "  migrate       - Run database migrations"
     echo "  reset         - Reset database (drop and recreate all tables)"
     echo "  create-tables - Create all tables"
     echo "  drop-tables   - Drop all tables"
     echo "  status        - Check database connection and table status"
-    echo ""
-    echo "Examples:"
-    echo "  $0 migrate"
-    echo "  $0 reset"
 }
 
 run_migration_command() {
     local cmd=$1
     echo -e "${BLUE}[INFO]${NC} Running database command: $cmd"
     
-    if python db_manager/cli.py "$cmd"; then
+    if ./venv/bin/python db_manager/cli.py "$cmd"; then
         echo -e "${GREEN}[SUCCESS]${NC} Command '$cmd' completed successfully"
     else
         echo -e "${RED}[ERROR]${NC} Command '$cmd' failed"
@@ -37,7 +31,7 @@ run_migration_command() {
 
 check_database_status() {
     echo -e "${BLUE}[INFO]${NC} Checking database status..."
-    python -c "
+    ./venv/bin/python -c "
 import sys
 import os
 sys.path.insert(0, os.path.abspath('.'))
@@ -60,7 +54,7 @@ try:
     
     # Check models
     tables_in_metadata = Base.metadata.tables.keys()
-    print(f'🏗️  Models defined: {len(tables_in_metadata)}')
+    print(f'Models defined: {len(tables_in_metadata)}')
     for table in tables_in_metadata:
         print(f'  - {table}')
         

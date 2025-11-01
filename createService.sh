@@ -5,14 +5,12 @@
 
 set -e
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m' 
 
-# Function to print colored output
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -29,7 +27,6 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Validate arguments
 if [ $# -ne 2 ]; then
     print_error "Usage: $0 <serviceName> <port>"
     print_info "Example: $0 user-service 8081"
@@ -39,32 +36,24 @@ fi
 SERVICE_NAME=$1
 PORT=$2
 
-# Validate service name
 if [[ ! $SERVICE_NAME =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
     print_error "Service name must start with a letter and contain only letters, numbers, hyphens, and underscores"
     exit 1
 fi
 
-# Validate port
 if [[ ! $PORT =~ ^[0-9]+$ ]] || [ $PORT -lt 1024 ] || [ $PORT -gt 65535 ]; then
     print_error "Port must be a number between 1024 and 65535"
     exit 1
 fi
 
-# Convert service name to snake_case for Python modules
 SNAKE_CASE_NAME=$(echo "$SERVICE_NAME" | sed 's/-/_/g' | tr '[:upper:]' '[:lower:]')
 
-# Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$SCRIPT_DIR"
 
 print_info "Creating Flask service: $SERVICE_NAME on port $PORT"
-
-# Create shared components if they don't exist
 create_shared_components() {
     print_info "Setting up shared components..."
-    
-    # Create shared models package
     mkdir -p "$BASE_DIR/shared/models"
     if [ ! -f "$BASE_DIR/shared/__init__.py" ]; then
         touch "$BASE_DIR/shared/__init__.py"
@@ -73,13 +62,11 @@ create_shared_components() {
         touch "$BASE_DIR/shared/models/__init__.py"
     fi
     
-    # Create db_manager utility
     mkdir -p "$BASE_DIR/db_manager"
     if [ ! -f "$BASE_DIR/db_manager/__init__.py" ]; then
         touch "$BASE_DIR/db_manager/__init__.py"
     fi
     
-    # Create database manager
     if [ ! -f "$BASE_DIR/db_manager/manager.py" ]; then
         cat > "$BASE_DIR/db_manager/manager.py" << 'EOF'
 import os
@@ -146,7 +133,6 @@ db_manager = DatabaseManager()
 EOF
     fi
     
-    # Create db_manager CLI
     if [ ! -f "$BASE_DIR/db_manager/cli.py" ]; then
         cat > "$BASE_DIR/db_manager/cli.py" << 'EOF'
 #!/usr/bin/env python3
@@ -200,19 +186,12 @@ EOF
     print_success "Shared components created/updated"
 }
 
-# Create service structure
 create_service() {
     SERVICE_DIR="$BASE_DIR/services/$SNAKE_CASE_NAME"
     
     print_info "Creating service directory structure..."
-    
-    # Create main service directories
     mkdir -p "$SERVICE_DIR"/{domain/{entities,repositories,services},infrastructure/{adapters,database,web},application/{dto,ports,use_cases}}
-    
-    # Create __init__.py files
     find "$SERVICE_DIR" -type d -exec touch {}/__init__.py \;
-    
-    # Create database configuration
     cat > "$SERVICE_DIR/infrastructure/database/connection.py" << 'EOF'
 import sys
 import os
@@ -235,7 +214,6 @@ def init_db():
     db_manager.create_tables()
 EOF
     
-    # Create web controllers
     cat > "$SERVICE_DIR/infrastructure/web/controllers.py" << 'EOF'
 import sys
 import os
@@ -260,7 +238,6 @@ def root():
     return APIResponse.success({"message": f"Welcome to {os.getenv('SERVICE_NAME', 'Flask Service')}"})
 EOF
     
-    # Create main application file
     cat > "$SERVICE_DIR/app.py" << EOF
 import sys
 import os
@@ -313,10 +290,10 @@ def create_app(config=None):
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(host='0.0.0.0', port=$PORT, debug=True)
+    config = BaseServiceConfig()
+    app.run(host=config.host, port=config.port, debug=config.debug)
 EOF
     
-    # Create requirements.txt
     cat > "$SERVICE_DIR/requirements.txt" << 'EOF'
 Flask==2.3.3
 Flask-CORS==4.0.0
@@ -326,12 +303,15 @@ cryptography==41.0.4
 python-dotenv==1.0.0
 EOF
     
-    # Create .env file
     cat > "$SERVICE_DIR/.env" << EOF
 DEBUG=True
 SECRET_KEY=dev-secret-key-change-in-production
+DATABASE_URL=mysql+pymysql://root:password@localhost:3306/flask_services
 SERVICE_NAME=$SERVICE_NAME
-SERVICE_PORT=$PORT
+PORT=$PORT
+NATS_URL=nats://localhost:4222
+NATS_HOST=localhost
+NATS_PORT=4222
 
 # Database configuration will be inherited from parent .env
 # DB_HOST=localhost
@@ -344,11 +324,8 @@ EOF
     print_success "Service '$SERVICE_NAME' created successfully at $SERVICE_DIR"
 }
 
-# Main execution
 main() {
     print_info "Starting Flask service creation..."
-    
-    # Check if service already exists
     if [ -d "$BASE_DIR/services/$SNAKE_CASE_NAME" ]; then
         print_warning "Service '$SNAKE_CASE_NAME' already exists. Do you want to overwrite it? (y/N)"
         read -r response
@@ -359,23 +336,12 @@ main() {
         rm -rf "$BASE_DIR/services/$SNAKE_CASE_NAME"
     fi
     
-    # Create shared components
     create_shared_components
-    
-    # Create the service
     create_service
     
     print_success "Service '$SERVICE_NAME' has been created successfully!"
-    print_info ""
-    print_info "Next steps:"
-    print_info "1. cd services/$SNAKE_CASE_NAME"
-    print_info "2. pip install -r requirements.txt"
-    print_info "3. python ../../db_manager/cli.py migrate"
-    print_info "4. python app.py"
-    print_info ""
     print_info "Your service will be available at: http://localhost:$PORT"
     print_info "Health check: http://localhost:$PORT/api/v1/health"
 }
 
-# Run main function
 main
