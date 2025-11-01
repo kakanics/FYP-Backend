@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nats-config
+data:
+  nats.conf: |
+    # NATS Server Configuration
+    port: 4222
+    http_port: 8222
+    
+    # Clustering (if needed later)
+    cluster {
+      name: nats_cluster
+      port: 6222
+    }
+    
+    # Monitoring
+    monitor_port: 8222
+    
+    # Logging
+    log_file: "/tmp/nats.log"
+    logtime: true
+    debug: false
+    trace: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  labels:
+    app: nats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nats
+  template:
+    metadata:
+      labels:
+        app: nats
+    spec:
+      containers:
+      - name: nats
+        image: nats:2.10-alpine
+        ports:
+        - containerPort: 4222
+          name: client
+        - containerPort: 8222
+          name: monitor
+        - containerPort: 6222
+          name: cluster
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/nats
+        args:
+        - "--config"
+        - "/etc/nats/nats.conf"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8222
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8222
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config-volume
+        configMap:
+          name: nats-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats-service
+  labels:
+    app: nats
+spec:
+  selector:
+    app: nats
+  ports:
+  - port: 4222
+    targetPort: 4222
+    name: client
+  - port: 8222
+    targetPort: 8222
+    name: monitor
+    nodePort: 30822
+  - port: 6222
+    targetPort: 6222
+    name: cluster
+  type: NodePort
